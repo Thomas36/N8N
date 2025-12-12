@@ -1,0 +1,29 @@
+services:
+  mariadb:
+    image: mariadb:10.6
+    container_name: glpi_mariadb
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: glpi_root_password
+      MYSQL_DATABASE: glpi
+      MYSQL_USER: glpi
+      MYSQL_PASSWORD: glpi_password
+    volumes:
+      - glpi_db:/var/lib/mysql
+
+  glpi:
+    image: diouxx/glpi:latest
+    container_name: glpi
+    depends_on:
+      - mariadb
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      - TIMEZONE=Europe/Paris
+    volumes:
+      - glpi_data:/var/www/html
+
+volumes:
+  glpi_db:
+  glpi_data:
