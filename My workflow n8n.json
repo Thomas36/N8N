@@ -1,0 +1,527 @@
+{
+  "name": "My workflow 2",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "seconds"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -160,
+        0
+      ],
+      "id": "b3248c6f-5ad0-494c-a0cb-446a9148b516",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.flatMap(item => {\n  // item.json.messages est le tableau des mails\n  return item.json.messages.map(mail => {\n    return {\n      json: {\n        id: mail.ID,\n        from: mail.From.Address,\n        subject: mail.Subject,\n        textBody: mail.Snippet || \"\",   // selon la clé exacte\n        attachments: mail.Attachments || []\n      }\n    };\n  });\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        0
+      ],
+      "id": "a2be4681-6131-4d63-a814-58cf57cf8047",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8080/apirest.php/initSession/",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "App-Token",
+              "value": "E1UfY5rwIHFFHIgYVjoC1k0jXe8Tj9FeivVYpDr6"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -16,
+        0
+      ],
+      "id": "a4620230-157b-45b2-bb02-05b5493b2209",
+      "name": "Connexion GLPI",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "BfjCMbOIiPslkhfb",
+          "name": "Unnamed credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "8be894eb-2fee-4b9a-a60b-da9e8482b290",
+              "name": "session_token",
+              "value": "={{ $json.session_token }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        112,
+        0
+      ],
+      "id": "fac0131e-a360-4c40-a61f-fb076c5bdabc",
+      "name": "Maintient du session_token"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8025/api/v1/messages",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "is:unread"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        256,
+        0
+      ],
+      "id": "f000e30a-d77b-4c94-8a95-fc39e123a07b",
+      "name": "Connexion Mail"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Récupération brute\nlet ai = $json;\n\n// L'IA renvoie un objet contenant output[], donc on récupère output[0]\nif (ai && Array.isArray(ai.output) && ai.output.length > 0) {\n  ai = ai.output[0];\n}\n\n// Si on n'a toujours pas un objet → erreur\nif (!ai || typeof ai !== \"object\") {\n  return {\n    json: { error: \"AI output invalid\", raw: $json }\n  };\n}\n\n// Mail incomplet ?\nif (!ai.complet) {\n  return {\n    json: {\n      skipped: true,\n      reason: ai.manques ?? \"Mail incomplet\"\n    }\n  };\n}\n\n// Mapping priorité IA → GLPI\nconst priorityMap = {\n  \"basse\": 2,\n  \"moyenne\": 3,\n  \"haute\": 4,\n  \"tres_haute\": 5,\n  \"critique\": 6\n};\nconst priorityId = priorityMap[(ai.priorite || \"\").toLowerCase()] ?? 2;\n\n// Mapping type IA → GLPI\nconst typeMap = {\n  \"incident\": 1,\n  \"demande\": 2\n};\nconst typeId = typeMap[(ai.type || \"\").toLowerCase()] ?? 2;\n\n// Mapping catégorie IA → GLPI\nconst categoryMap = {\n  \"réseau\": 2,\n  \"système\": 1,\n  \"sécurité\": 3\n};\nconst categoryId = categoryMap[(ai.categorie || \"\").toLowerCase()] ?? 5;\n\n// Construction du payload GLPI\nreturn {\n  json: {\n    input: {\n      name: ai.resume || \"Ticket automatisé\",\n      content:\n        \"Résumé IA : \" + (ai.resume || \"\") + \"\\n\\n\" +\n        \"Manques : \" + (ai.manques || \"\") + \"\\n\\n\" +\n        \"Type IA : \" + ai.type + \"\\n\" +\n        \"Catégorie IA : \" + ai.categorie,\n      priority: priorityId,\n      type: typeId,\n      itilcategories_id: categoryId\n    }\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2032,
+        -224
+      ],
+      "id": "911d38ec-0957-43e3-b01b-6310e820a767",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8080/apirest.php/Ticket",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "App-Token",
+              "value": "E1UfY5rwIHFFHIgYVjoC1k0jXe8Tj9FeivVYpDr6"
+            },
+            {
+              "name": "Session-Token",
+              "value": "={{ $('Maintient du session_token').item.json.session_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "input",
+              "value": "={{ $json.input }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2352,
+        -224
+      ],
+      "id": "b566b86a-fc17-423b-abc2-2bfd6483ac59",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ff94e087-56e2-42d2-93fc-0e602e452ae9",
+              "leftValue": "={{ $json.output[0].complet }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1648,
+        -96
+      ],
+      "id": "b0eec7ea-8d99-4f92-b746-4bdf710c7b72",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Code à utiliser DANS un node Code n8n\n// Mode: \"Run Once for Each Item\"\n\n// Récupère la réponse brute (différentes installations d'Ollama peuvent mettre la data à différents endroits)\nlet raw = $json.data ?? $json.response ?? $json.content ?? $json;\n\n// Si raw est un objet qui contient une clé \"data\" avec du texte, utilise-la\nif (raw && typeof raw === 'object' && raw.data && typeof raw.data === 'string') {\n  raw = raw.data;\n}\n\n// Si raw est un tableau (chunks), concatène les champs \"response\" s'il y en a\nif (Array.isArray(raw)) {\n  let acc = '';\n  for (const chunk of raw) {\n    if (typeof chunk === 'string') {\n      acc += chunk;\n    } else if (chunk && typeof chunk === 'object' && (chunk.response || chunk.content)) {\n      acc += (chunk.response ?? chunk.content);\n    } else if (typeof chunk === 'object') {\n      // si chunk est un objet serialisé, tenter d'en extraire response/content\n      acc += JSON.stringify(chunk);\n    }\n  }\n  raw = acc;\n}\n\n// Si raw est un objet avec la propriété 'response' (cas simple), on récupère la concaténation\nif (raw && typeof raw === 'object' && raw.response && typeof raw.response === 'string') {\n  raw = raw.response;\n}\n\n// Maintenant raw doit être une string contenant notre JSON (ou déjà un objet parsed)\nlet parsed;\nif (typeof raw === 'string') {\n  // Nettoyage: supprimer éventuels caractères de streaming parasites en début/fin\n  const s = raw.trim();\n\n  // Première tentative: le string entier est du JSON\n  try {\n    parsed = JSON.parse(s);\n  } catch (e) {\n    // Si échec, essayer d'extraire la première occurrence d'un objet JSON {...}\n    const match = s.match(/\\{[\\s\\S]*\\}/);\n    if (match) {\n      try {\n        parsed = JSON.parse(match[0]);\n      } catch (e2) {\n        throw new Error('Impossible de parser le JSON extrait de la réponse IA : ' + e2.message);\n      }\n    } else {\n      throw new Error('Aucun JSON trouvable dans la réponse IA. Contenu reçu: ' + s.substring(0,400));\n    }\n  }\n} else if (typeof raw === 'object') {\n  parsed = raw;\n} else {\n  throw new Error('Format de réponse IA non géré: ' + String(raw).substring(0,200));\n}\n\n// ATTENTION : ici on retourne UN SEUL objet parce que le node est en Run Once for Each Item\nreturn {\n  json: parsed\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1456,
+        -96
+      ],
+      "id": "fdd4e314-3349-4eac-a6be-a07416fb4358",
+      "name": "Code in JavaScript2"
+    },
+    {
+      "parameters": {
+        "fromEmail": "bot@Cdiscount.com",
+        "toEmail": "={{ $json.emetteur }}",
+        "subject": "Informations manquantes pour votre demande",
+        "html": "=Bonjour,\n\nVotre demande n’a pas pu être traitée car il manque certaines informations :\n\n{{ $json.manques }}\n\nMerci de renvoyer un email avec les éléments manquants.\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1904,
+        48
+      ],
+      "id": "3d324356-e582-4b8c-a663-4186fad01963",
+      "name": "Send email",
+      "webhookId": "6ada89ef-d5b6-488a-b4be-3a545a99fa5e",
+      "credentials": {
+        "smtp": {
+          "id": "z0tPaQhEbT6QxqQL",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=http://localhost:8025/api/v1/messages",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"IDs\": [\n    \"{{ $('Code in JavaScript').item.json.id }}\"\n  ],\n  \"Read\": true\n} ",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2800,
+        -224
+      ],
+      "id": "fe11b950-ab80-460b-b235-a5112c87a9f4",
+      "name": "HTTP Request2"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Tu es un assistant chargé d'analyser des emails pour la création automatique de tickets GLPI.\nVoici l'email reçu :\nSujet : {{ $json.subject }}\nExpéditeur : {{ $json.from }}\nContenu : {{ $json.textBody }}\nCRITÈRES POUR DÉTERMINER SI LE MAIL EST COMPLET :\nUn mail est considéré comme COMPLET si :\nle problème est clairement décrit, il permet d'identifier l'action attendue ou le dysfonctionnement précis.\nExemples de mails INCOMPLETS : \"J'arrive plus à travailler\" \"Ça ne marche pas\" \"URGENT !!!\" \nExemples de mails COMPLETS :\"J'ai un écran noir\"\n\"Je n'arrive plus à ouvrir Outlook, j'ai un message d'erreur X\"\n\"Impossible d'imprimer sur l'imprimante HP du bureau, elle affiche code erreur Y\"\nSi le mail est incomplet → mettre \"complet\": false et expliquer ce qu'il manque dans \"manques\".\nSi complet → \"complet\": true et \"manques\": \"\".RÈGLES POUR LA PRIORITÉ (CRITICITÉ) :\"critique\" : l'utilisateur ne peut plus travailler du tout (ex: écran noir, PC bloqué, service vital HS). \"moyenne\" : l'utilisateur peut travailler mais une fonction importante ne marche plus (ex: boîte mail inaccessible, problème réseau intermittent).\"basse\" : l'utilisateur peut travailler, simple demande ou gêne mineure (ex: demande de matériel, changement de mot de passe, ajout imprimante).FORMAT DE RÉPONSE OBLIGATOIRE : Répond STRICTEMENT en JSON, sans aucun texte autour.Structure attendue : \"complet\": true, \"manques\": ,\"titre\": , \"resume\": ,\"priorite\": \"basse | moyenne | critique\", \"type\": \"incident | demande\", \"categorie\": , \"emetteur\": {{ $json.from }} IMPORTANT : Ne jamais ajouter de texte hors du JSON. Ne jamais utiliser d'autres champs. Ne pas reformuler en dehors du JSON. Et, pour tout ce qui est installation etc, il n'y a pas de critère spécifique à avoir comme pour toute demande à peu près claire. Étant tous dans la même entreprise, il n'est pas obligatoire de spécifier les logiciels, ni les personnes. Sois beaucoup moins exigeant quand ça concerne des demandes. Par exemple, une police de boîte mail : pas besoin de connaître la boîte mail, avec l'adresse mail on sait qui c'est ; pas besoin de connaître la police, c'est du contact client, toutes les requêtes ne sont pas forcément des incidents. Il faudrait que tu saches si c'est une demande ou un incident pour qualifier la demande. Base-toi là-dessus pour tout. Il faudrait aussi que tu fasses apparaître dans la réponse si c’est une *demande* ou un *incident*, ainsi que la *catégorie* en fonction du contenu du mail entre ces 3 la: Réseau, Système, Sécurité), par exemple: mail = Système, tout ce qu'il touche à un ordinateur ou serveur, équipements réseau et internet= Réseau, virus = Sécurité.\n\n",
+        "hasOutputParser": true,
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        1120,
+        0
+      ],
+      "id": "cad60ea5-8312-4c71-b1f5-7f64e907249c",
+      "name": "Basic LLM Chain"
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "[\n  {\n    \"complet\": true,\n    \"manques\": \"\",\n    \"resume\": \"\",\n    \"priorite\": \"basse\",\n    \"type\": \"demande\",\n    \"categorie\": \"support utilisateur\"\n  }\n]\n",
+        "autoFix": true
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        1296,
+        304
+      ],
+      "id": "471ad85d-33a9-4ac2-bd2d-1c5ef6bff268",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "model": "gemma3:4b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmOllama",
+      "typeVersion": 1,
+      "position": [
+        1072,
+        304
+      ],
+      "id": "91cb3c96-c858-43ec-bcd3-8593211f0796",
+      "name": "Ollama Model",
+      "credentials": {
+        "ollamaApi": {
+          "id": "Ro2xvnGpuIxFR4RU",
+          "name": "Ollama account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "bot@Cdiscount.com",
+        "toEmail": "={{ $('Code in JavaScript').item.json.from }}",
+        "subject": "={{ $('Basic LLM Chain').item.json.output[0].type }}: {{ $('Code in JavaScript').item.json.subject }}",
+        "html": "=Votre demande concernant:  {{ $('Code in JavaScript').item.json.subject }} a bien été prise en compte",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2576,
+        -224
+      ],
+      "id": "922b646c-90a8-4e01-a12b-ecb5e5de7752",
+      "name": "Send email1",
+      "webhookId": "e33fa26c-bfa7-4f0a-90e3-59ed9c0fee87",
+      "credentials": {
+        "smtp": {
+          "id": "z0tPaQhEbT6QxqQL",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// items[0].json doit contenir la liste des messages Mailpit\nconst data = items[0].json;\n\n// Mailpit peut renvoyer :\n// { messages: [...] }  OU  { messages: { messages: [...] } }\n\nlet messages = [];\n\n// Cas 1 : API standard\nif (Array.isArray(data.messages)) {\n  messages = data.messages;\n}\n// Cas 2 : API alternative\nelse if (data.messages && Array.isArray(data.messages.messages)) {\n  messages = data.messages.messages;\n}\n\n// Filtre les mails NON lus\nconst unread = messages.filter(msg => msg.Read === false || msg.Read === 0 || msg.read === false);\n\n// ⚠️ Aucun mail non lu → arrêter le workflow\nif (unread.length === 0) {\n  return []; // n8n stoppe automatiquement le workflow car aucun item n’est renvoyé\n}\n\n// ✔️ Des mails non lus existent → transmettre la liste au nœud suivant\nreturn [{\n  json: {\n    messages: unread\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        528,
+        0
+      ],
+      "id": "2a151976-c4ed-4967-8d1b-71dde49804b1",
+      "name": "Code in JavaScript3"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Connexion GLPI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Connexion GLPI": {
+      "main": [
+        [
+          {
+            "node": "Maintient du session_token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Maintient du session_token": {
+      "main": [
+        [
+          {
+            "node": "Connexion Mail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Connexion Mail": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Send email1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send email": {
+      "main": [
+        []
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Structured Output Parser",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send email1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript3": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "a7f49f0f-7042-4a22-8a29-1c51975996af",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "8e1ddbe65e7b8299d13ea77265fc99a90a63fa9aed07c678e07057c45a49a39d"
+  },
+  "id": "MJ3wwZkKW7FvI7yU",
+  "tags": []
+}
